@@ -1,0 +1,7 @@
+This is a copy of the [GCC ARM Embedded] build recipe.  Instead of being
+hidden in a massive tarball on Launchpad, this is in Git.
+
+I didn't write this code and can't really answer questions about it.  I just
+wanted it in version control.
+
+[GCC ARM Embedded]: https://launchpad.net/gcc-arm-embedded
