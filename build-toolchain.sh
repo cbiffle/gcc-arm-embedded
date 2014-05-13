@@ -172,7 +172,6 @@ $SRCDIR/$GCC/configure --target=$TARGET \
     --disable-nls \
     --disable-shared \
     --disable-threads \
-    --disable-tls \
     --with-newlib \
     --without-headers \
     --with-gnu-as \
@@ -291,7 +290,6 @@ $SRCDIR/$GCC/configure --target=$TARGET \
     --disable-nls \
     --disable-shared \
     --disable-threads \
-    --disable-tls \
     --with-gnu-as \
     --with-gnu-ld \
     --with-newlib \
@@ -367,7 +365,6 @@ $SRCDIR/$GCC/configure --target=$TARGET \
     --disable-nls \
     --disable-shared \
     --disable-threads \
-    --disable-tls \
     --with-gnu-as \
     --with-gnu-ld \
     --with-newlib \
@@ -618,7 +615,6 @@ $SRCDIR/$GCC/configure --build=$BUILD --host=$HOST_MINGW --target=$TARGET \
     --disable-nls \
     --disable-shared \
     --disable-threads \
-    --disable-tls \
     --with-gnu-as \
     --with-gnu-ld \
     --with-headers=yes \
