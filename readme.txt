@@ -19,7 +19,7 @@ $ cd $install_dir && tar xjf gcc-arm-none-eabi-*-yyyymmdd-linux.tar.bz2
 
 For 64 bit system, 32 bit libc and libncurses are required to run the tools.
 
-For Ubuntu 10.04/12.04/13.04 user, the toolchain can also be installed via
+For some Ubuntu releases, the toolchain can also be installed via
 Launchpad PPA at https://launchpad.net/~terry.guo/+archive/gcc-arm-embedded.
 
 * Installing executables on Mac OS X *
@@ -197,3 +197,6 @@ written in Python and under Apache License.
 For those who are using this toolchain and have board with CMSIS-DAP based
 debugger, the pyOCD is our recommended gdb server.
 More information can be found at https://github.com/mbedmicro/pyOCD.
+
+Currently pyOCD is still in development stage but has a quite active community.
+Reporting issues in either our Launchpad website or pyOCD community are welcomed.

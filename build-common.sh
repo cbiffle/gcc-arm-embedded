@@ -263,7 +263,7 @@ GCC=gcc
 GCC_PLUGINS=gcc-plugins
 GDB=gdb
 GMP=gmp-4.3.2
-NEWLIB_NANO=newlib-nano-2.0
+NEWLIB_NANO=newlib-nano-2.1
 SAMPLES=samples
 LIBELF=libelf-0.8.13
 LIBICONV=libiconv-1.14
@@ -313,8 +313,8 @@ SAMPLES_DOS_FILES=$SAMPLES/readme.txt
 BUILD_MANUAL_FILE=How-to-build-toolchain.pdf
 GCC_VER=`cat $SRCDIR/$GCC/gcc/BASE-VER`
 GCC_VER_NAME=`echo $GCC_VER | cut -d'.' -f1,2 | sed -e 's/\./_/g'`
-HOST_MINGW=i586-mingw32
-HOST_MINGW_TOOL=i586-mingw32msvc
+HOST_MINGW=i686-w64-mingw32
+HOST_MINGW_TOOL=i686-w64-mingw32
 TARGET=arm-none-eabi
 ENV_CFLAGS=
 ENV_CPPFLAGS=
@@ -340,6 +340,7 @@ if [ "x$uname_string" == "xlinux" ] ; then
     JOBS=`grep ^processor /proc/cpuinfo|wc -l`
     GCC_CONFIG_OPTS_LCPP="--with-host-libstdcxx=-static-libgcc -Wl,-Bstatic,-lstdc++,-Bdynamic -lm"
     TAR=tar
+    MD5="md5sum -b"
     PACKAGE_NAME_SUFFIX=linux
     build_gcc_plugin=yes
 elif [ "x$uname_string" == "xdarwin" ] ; then
@@ -350,7 +351,8 @@ elif [ "x$uname_string" == "xdarwin" ] ; then
 #    JOBS=`sysctl -n hw.ncpu`
     JOBS=1
     GCC_CONFIG_OPTS_LCPP="--with-host-libstdcxx=-static-libgcc -Wl,-lstdc++ -lm"
-    TAR=gtar
+    TAR=gnutar
+    MD5="md5 -r"
     PACKAGE_NAME_SUFFIX=mac
 else
     error "Unsupported build system : $uname_string"

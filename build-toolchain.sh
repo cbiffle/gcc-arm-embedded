@@ -42,15 +42,16 @@ script_path=`cd $(dirname $0) && pwd -P`
 usage ()
 {
     echo "Usage:" >&2
-    echo "      $0 [--skip_mingw32] [--debug] [--ppa]" >&2
+    echo "      $0 [--skip_mingw32] [--debug] [--ppa] [--skip_manual]" >&2
     exit 1
 }
-if [ $# -gt 3 ] ; then
+if [ $# -gt 4 ] ; then
     usage
 fi
 skip_mingw32=no
-DEBUG_BUILD_OPTIONS=no
+DEBUG_BUILD_OPTIONS=
 is_ppa_release=no
+skip_manual=no
 MULTILIB_LIST="--with-multilib-list=armv6-m,armv7-m,armv7e-m,armv7-r"
 for ac_arg; do
     case $ac_arg in
@@ -64,6 +65,9 @@ for ac_arg; do
             is_ppa_release=yes
             skip_mingw32=yes
             ;;
+	--skip_manual)
+	    skip_manual=yes
+	    ;;
         *)
             usage
             ;;
@@ -127,13 +131,17 @@ $SRCDIR/$BINUTILS/configure  \
     --with-sysroot=$INSTALLDIR_NATIVE/arm-none-eabi \
     "--with-pkgversion=$PKGVERSION"
 
-if [ "x$DEBUG_BUILD_OPTIONS" != "xno" ] ; then
+if [ "x$DEBUG_BUILD_OPTIONS" != "x" ] ; then
     make CFLAGS="-I$BUILDDIR_NATIVE/host-libs/zlib/include $DEBUG_BUILD_OPTIONS" -j$JOBS
 else
     make -j$JOBS
 fi
 
-make install install-html install-pdf
+make install
+
+if [ "x$skip_manual" != "xyes" ]; then
+	make install-html install-pdf
+fi
 
 copy_dir $INSTALLDIR_NATIVE $BUILDDIR_NATIVE/target-libs
 restoreenv
@@ -191,7 +199,7 @@ popd
 echo Task [III-2] /$HOST_NATIVE/newlib/
 saveenv
 prepend_path PATH $INSTALLDIR_NATIVE/bin
-saveenvvar CFLAGS_FOR_TARGET '-g -O2 -fno-unroll-loops -ffunction-sections -fdata-sections'
+saveenvvar CFLAGS_FOR_TARGET '-g -O2 -ffunction-sections -fdata-sections'
 rm -rf $BUILDDIR_NATIVE/newlib && mkdir -p $BUILDDIR_NATIVE/newlib
 pushd $BUILDDIR_NATIVE/newlib
 
@@ -212,6 +220,7 @@ make -j$JOBS
 
 make install
 
+if [ "x$skip_manual" != "xyes" ]; then
 make pdf
 mkdir -p $INSTALLDIR_NATIVE_DOC/pdf
 cp $BUILDDIR_NATIVE/newlib/arm-none-eabi/newlib/libc/libc.pdf $INSTALLDIR_NATIVE_DOC/pdf/libc.pdf
@@ -221,6 +230,7 @@ make html
 mkdir -p $INSTALLDIR_NATIVE_DOC/html
 copy_dir $BUILDDIR_NATIVE/newlib/arm-none-eabi/newlib/libc/libc.html $INSTALLDIR_NATIVE_DOC/html/libc
 copy_dir $BUILDDIR_NATIVE/newlib/arm-none-eabi/newlib/libm/libm.html $INSTALLDIR_NATIVE_DOC/html/libm
+fi
 
 popd
 restoreenv
@@ -295,14 +305,18 @@ $SRCDIR/$GCC/configure --target=$TARGET \
 # transactional memory related code in crtbegin.o.
 # This is a workaround. Better approach is have a t-* to set this flag via
 # CRTSTUFF_T_CFLAGS
-if [ "x$DEBUG_BUILD_OPTIONS" != "xno" ]; then
-  make -j$JOBS CFLAGS="$DEBUG_BUILD_OPTIONS" \
+if [ "x$DEBUG_BUILD_OPTIONS" != "x" ]; then
+  make -j$JOBS CXXFLAGS="$DEBUG_BUILD_OPTIONS" \
 	       INHIBIT_LIBC_CFLAGS="-DUSE_TM_CLONE_REGISTRY=0"
 else
   make -j$JOBS INHIBIT_LIBC_CFLAGS="-DUSE_TM_CLONE_REGISTRY=0"
 fi
 
-make install install-html install-pdf
+make install
+
+if [ "x$skip_manual" != "xyes" ]; then
+	make install-html install-pdf
+fi
 
 pushd $INSTALLDIR_NATIVE
 rm -rf bin/arm-none-eabi-gccbug
@@ -326,7 +340,7 @@ plugin_src_dirs=$(find $SRCDIR/$GCC_PLUGINS/ -mindepth 1 -maxdepth 1 -type d -na
 for d in $plugin_src_dirs; do
     plugin_name=$(basename $d)
     src_files=$(find $d -name \*.c -or -name \*.cc)
-    g++ -fPIC -fno-rtti -O2 -shared -I $plugin_dir/include $src_files \
+    g++ -fPIC -fno-rtti -O2 -shared -I $BUILDDIR_NATIVE/host-libs/usr/include -I $plugin_dir/include $src_files \
       -o $plugin_dir/$plugin_name.so
 done
 fi
@@ -389,18 +403,23 @@ $SRCDIR/$GDB/configure  \
     --disable-sim \
     --with-libexpat \
     --with-python=no \
+    --with-lzma=no \
     --with-system-gdbinit=$INSTALLDIR_NATIVE/$HOST_NATIVE/arm-none-eabi/lib/gdbinit \
     $GDB_CONFIG_OPTS \
     '--with-gdb-datadir='\''${prefix}'\''/arm-none-eabi/share/gdb' \
     "--with-pkgversion=$PKGVERSION"
 
-if [ "x$DEBUG_BUILD_OPTIONS" != "xno" ] ; then
+if [ "x$DEBUG_BUILD_OPTIONS" != "x" ] ; then
     make CFLAGS="-I$BUILDDIR_NATIVE/host-libs/zlib/include $DEBUG_BUILD_OPTIONS" -j$JOBS
 else
     make -j$JOBS
 fi
 
-make install install-html install-pdf
+make install
+
+if [ "x$skip_manual" != "xyes" ]; then
+	make install-html install-pdf
+fi
 
 restoreenv
 popd
@@ -426,7 +445,7 @@ rm -rf $INSTALLDIR_NATIVE/lib/libiberty.a
 find $INSTALLDIR_NATIVE -name '*.la' -exec rm '{}' ';'
 
 echo Task [III-9] /$HOST_NATIVE/strip_host_objects/
-if [ "x$DEBUG_BUILD_OPTIONS" = "xno" ] ; then
+if [ "x$DEBUG_BUILD_OPTIONS" = "x" ] ; then
     STRIP_BINARIES=`find $INSTALLDIR_NATIVE/bin/ -name arm-none-eabi-\*`
     for bin in $STRIP_BINARIES ; do
         strip_binary strip $bin
@@ -534,25 +553,31 @@ $SRCDIR/$BINUTILS/configure --build=$BUILD \
     --with-sysroot=$INSTALLDIR_MINGW/arm-none-eabi \
     "--with-pkgversion=$PKGVERSION"
 
-make -j$JOBS
+if [ "x$DEBUG_BUILD_OPTIONS" != "x" ] ; then
+    make CFLAGS="-I$BUILDDIR_MINGW/host-libs/zlib/include $DEBUG_BUILD_OPTIONS" -j$JOBS
+else
+    make -j$JOBS
+fi
 
-make install install-html install-pdf
+make install
+
+if [ "x$skip_manual" != "xyes" ]; then
+	make install-html install-pdf
+fi
 
 restoreenv
 popd
 
 pushd $INSTALLDIR_MINGW
-rm -rf lib/charset.alias
-rm -rf ./lib/libiberty.a
-rmdir ./lib
+rm -rf ./lib
 popd
 
 
 echo Task [IV-2] /$HOST_MINGW/copy_libs/
+if [ "x$skip_manual" != "xyes" ]; then
 copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/share/doc/gcc-arm-none-eabi/html $INSTALLDIR_MINGW_DOC/html
 copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/share/doc/gcc-arm-none-eabi/pdf $INSTALLDIR_MINGW_DOC/pdf
-#copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/share/doc/info $INSTALLDIR_MINGW/share/doc/info
-#copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/share/doc/man $INSTALLDIR_MINGW/share/doc/man
+fi
 copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/arm-none-eabi/lib $INSTALLDIR_MINGW/arm-none-eabi/lib
 copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/arm-none-eabi/include $INSTALLDIR_MINGW/arm-none-eabi/include
 copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/arm-none-eabi/include/c++ $INSTALLDIR_MINGW/arm-none-eabi/include/c++
@@ -609,9 +634,17 @@ $SRCDIR/$GCC/configure --build=$BUILD --host=$HOST_MINGW --target=$TARGET \
     "--with-pkgversion=$PKGVERSION" \
     ${MULTILIB_LIST}
 
-make -j$JOBS all-gcc
+if [ "x$DEBUG_BUILD_OPTIONS" != "x" ]; then
+  make -j$JOBS CXXFLAGS="$DEBUG_BUILD_OPTIONS" all-gcc
+else
+  make -j$JOBS all-gcc
+fi
 
-make  install-gcc install-html-gcc install-pdf-gcc
+make  install-gcc
+
+if [ "x$skip_manual" != "xyes" ]; then
+	make install-html-gcc install-pdf-gcc
+fi
 popd
 
 pushd $INSTALLDIR_MINGW
@@ -643,15 +676,24 @@ $SRCDIR/$GDB/configure --build=$BUILD \
     --disable-nls \
     --disable-sim \
     --with-python=no \
+    --with-lzma=no \
     --with-libexpat=$BUILDDIR_MINGW/host-libs/usr \
     --with-libiconv-prefix=$BUILDDIR_MINGW/host-libs/usr \
     --with-system-gdbinit=$INSTALLDIR_MINGW/$HOST_MINGW/arm-none-eabi/lib/gdbinit \
     '--with-gdb-datadir='\''${prefix}'\''/arm-none-eabi/share/gdb' \
     "--with-pkgversion=$PKGVERSION"
 
-make -j$JOBS
+if [ "x$DEBUG_BUILD_OPTIONS" != "x" ] ; then
+    make CFLAGS="-I$BUILDDIR_MINGW/host-libs/zlib/include $DEBUG_BUILD_OPTIONS" -j$JOBS
+else
+    make -j$JOBS
+fi
 
-make install install-html install-pdf
+make install
+if [ "x$skip_manual" != "xyes" ]; then
+	make install-html install-pdf
+fi
+
 restoreenv
 popd
 
@@ -665,19 +707,21 @@ find $INSTALLDIR_MINGW -name '*.la' -exec rm '{}' ';'
 
 echo Task [IV-6] /$HOST_MINGW/strip_host_objects/
 STRIP_BINARIES=`find $INSTALLDIR_MINGW/bin/ -name arm-none-eabi-\*.exe`
-for bin in $STRIP_BINARIES ; do
-    strip_binary $HOST_MINGW_TOOL-strip $bin
-done
+if [ "x$DEBUG_BUILD_OPTIONS" = "x" ] ; then
+    for bin in $STRIP_BINARIES ; do
+        strip_binary $HOST_MINGW_TOOL-strip $bin
+    done
 
-STRIP_BINARIES=`find $INSTALLDIR_MINGW/arm-none-eabi/bin/ -maxdepth 1 -mindepth 1 -name \*.exe`
-for bin in $STRIP_BINARIES ; do
-    strip_binary $HOST_MINGW_TOOL-strip $bin
-done
+    STRIP_BINARIES=`find $INSTALLDIR_MINGW/arm-none-eabi/bin/ -maxdepth 1 -mindepth 1 -name \*.exe`
+    for bin in $STRIP_BINARIES ; do
+        strip_binary $HOST_MINGW_TOOL-strip $bin
+    done
 
-STRIP_BINARIES=`find $INSTALLDIR_MINGW/lib/gcc/arm-none-eabi/$GCC_VER/ -name \*.exe`
-for bin in $STRIP_BINARIES ; do
-    strip_binary $HOST_MINGW_TOOL-strip $bin
-done
+    STRIP_BINARIES=`find $INSTALLDIR_MINGW/lib/gcc/arm-none-eabi/$GCC_VER/ -name \*.exe`
+    for bin in $STRIP_BINARIES ; do
+        strip_binary $HOST_MINGW_TOOL-strip $bin
+    done
+fi
 
 echo Task [IV-7] /$HOST_MINGW/installation/
 rm -f $PACKAGEDIR/$PACKAGE_NAME_MINGW.exe
@@ -749,10 +793,10 @@ popd
 echo Task [V-1] /md5_checksum/
 pushd $PACKAGEDIR
 rm -rf md5.txt
-md5sum -b $PACKAGE_NAME_NATIVE.tar.bz2     >>md5.txt
+$MD5 $PACKAGE_NAME_NATIVE.tar.bz2     >>md5.txt
 if [ "x$skip_mingw32" != "xyes" ] ; then
-    md5sum -b $PACKAGE_NAME_MINGW.exe         >>md5.txt
-    md5sum -b $PACKAGE_NAME_MINGW.zip         >>md5.txt
+    $MD5 $PACKAGE_NAME_MINGW.exe         >>md5.txt
+    $MD5 $PACKAGE_NAME_MINGW.zip         >>md5.txt
 fi
-md5sum -b $PACKAGE_NAME-src.tar.bz2 >>md5.txt
+$MD5 $PACKAGE_NAME-src.tar.bz2 >>md5.txt
 popd
