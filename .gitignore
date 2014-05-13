@@ -1,0 +1,5 @@
+build-native/
+install-native/
+pkg/
+src/*/
+How-to-build-toolchain.pdf
