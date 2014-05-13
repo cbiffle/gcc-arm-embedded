@@ -212,8 +212,10 @@ $SRCDIR/$NEWLIB/configure  \
     --htmldir=$INSTALLDIR_NATIVE_DOC/html \
     --pdfdir=$INSTALLDIR_NATIVE_DOC/pdf \
     --enable-newlib-io-long-long \
-    --enable-newlib-register-fini \
     --disable-newlib-supplied-syscalls \
+    --enable-target-optspace \
+    --enable-newlib-multithread \
+    --enable-newlib-reent-small \
     --disable-nls
 
 make -j$JOBS
