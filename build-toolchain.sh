@@ -128,6 +128,7 @@ $SRCDIR/$BINUTILS/configure  \
     --pdfdir=$INSTALLDIR_NATIVE_DOC/pdf \
     --disable-nls \
     --enable-plugins \
+    --enable-werror=no \
     --with-sysroot=$INSTALLDIR_NATIVE/arm-none-eabi \
     "--with-pkgversion=$PKGVERSION"
 
@@ -404,6 +405,7 @@ $SRCDIR/$GDB/configure  \
     --with-python=no \
     --with-lzma=no \
     --with-system-gdbinit=$INSTALLDIR_NATIVE/$HOST_NATIVE/arm-none-eabi/lib/gdbinit \
+    --enable-werror=no \
     $GDB_CONFIG_OPTS \
     '--with-gdb-datadir='\''${prefix}'\''/arm-none-eabi/share/gdb' \
     "--with-pkgversion=$PKGVERSION"
