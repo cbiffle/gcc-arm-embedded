@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# Copyright (c) 2011-2013, ARM Limited
+# Copyright (c) 2011-2015, ARM Limited
 # All rights reserved.
 # 
 # Redistribution and use in source and binary forms, with or without
@@ -42,27 +42,78 @@ script_path=`cd $(dirname $0) && pwd -P`
 # for ARM EABI toolchain.
 usage ()
 {
-    echo "Usage:" >&2
-    echo "      $0 [--skip_mingw32]" >&2
-    exit 1
+cat<<EOF
+Usage: $0 [--build_tools=...] [--skip_steps=...]
+
+This script will build dependent libraries for gcc arm embedded toolchain.
+
+OPTIONS:
+  --build_tools=TOOLS   specify where to find the native build tools that
+                        will be used for building gcc arm embedded toolchain
+                        and related dependent libraries.  If not specified,
+                        the ones in your system will be used.
+
+			Please refer to howto-build document to find out how
+			to download and deploy prebuilt native tools for 32bit
+			build platform.
+                        The prebuilt ones provided by arm embedded toolchain
+                        team are supposed to run on 32bit build platform, thus
+                        not suitable for 64bit platform.
+
+  --skip_steps=STEPS    specify which build steps you want to skip.  Concatenate
+                        them with comma for skipping more than one steps.
+                        Available step is: mingw32.
+
+EOF
 }
-if [ $# -gt 1 ] ; then
+
+if [ $# -gt 2 ] ; then
     usage
 fi
+
+skip_steps=
 skip_mingw32=no
+
 for ac_arg; do
     case $ac_arg in
-        --skip_mingw32)
-            skip_mingw32=yes
+        --skip_steps=*)
+            skip_steps=`echo $ac_arg | sed -e "s/--skip_steps=//g" -e "s/,/ /g"`
+            ;;
+        --build_tools=*)
+            build_tools=`echo $ac_arg | sed -e "s/--build_tools=//g"`
+            build_tools_abs_path=`cd $build_tools && pwd -P`
+            if [ -d $build_tools_abs_path ]; then
+              export PATH=$build_tools_abs_path/gcc/bin:$PATH
+              export PATH=$build_tools_abs_path/mingw-w64-gcc/bin:$PATH
+            else
+              echo "The specified folder of build tools don't exist: $build_tools" 1>&2
+              exit 1
+            fi
             ;;
         *)
             usage
+	    exit 1
             ;;
     esac
 done
 
+if [ "x$skip_steps" != "x" ]; then
+        for ss in $skip_steps; do
+                case $ss in
+                    mingw32)
+                      skip_mingw32=yes
+                      ;;
+                    *)
+                      echo "Unknown build steps: $ss" 1>&2
+                      usage
+                      exit 1
+                      ;;
+                esac
+        done
+fi
+
 if [ "x$BUILD" == "xx86_64-apple-darwin10" ]; then
-    skip_mingw32=yes
+  skip_mingw32=yes
 fi
 
 rm -rf $BUILDDIR_NATIVE && mkdir -p $BUILDDIR_NATIVE

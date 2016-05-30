@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# Copyright (c) 2011-2013, ARM Limited
+# Copyright (c) 2011-2015, ARM Limited
 # All rights reserved.
 # 
 # Redistribution and use in source and binary forms, with or without
@@ -41,41 +41,160 @@ script_path=`cd $(dirname $0) && pwd -P`
 # This file contains the sequence of commands used to build the ARM EABI toolchain.
 usage ()
 {
-    echo "Usage:" >&2
-    echo "      $0 [--skip_mingw32] [--debug] [--ppa] [--skip_manual]" >&2
-    exit 1
+cat<<EOF
+Usage: $0 [--build_type=...] [--build_tools=...] [--skip_steps=...]
+
+This script will build gcc arm embedded toolchain.
+
+OPTIONS:
+  --build_type=TYPE     specify build type to either ppa or native.
+                        If followed by keyword debug, the produced binaries
+                        will be debuggable.  The default case will be
+                        non-debug native build.
+
+                        Example usages are as:
+                        --build_type=native
+                        --build_type=ppa
+                        --build_type=native,debug
+                        --build_type=ppa,debug
+
+  --build_tools=TOOLS   specify where to find the native build tools that
+                        will be used for building gcc arm embedded toolchain
+                        and related dependent libraries.  If not specified,
+                        the ones in your system will be used.
+
+                        The prebuilt ones provided by arm embedded toolchain
+                        team are supposed to run on 32bit build platform, thus
+                        not suitable for 64bit platform.
+
+  --skip_steps=STEPS    specify which build steps you want to skip.  Concatenate
+                        them with comma for skipping more than one steps.  Available
+                        steps are: gdb-with-python, mingw32, mingw32-gdb-with-python
+                        and manual.
+EOF
 }
-if [ $# -gt 4 ] ; then
+
+if [ $# -gt 3 ] ; then
     usage
 fi
+
 skip_mingw32=no
 DEBUG_BUILD_OPTIONS=
 is_ppa_release=no
+is_native_build=yes
 skip_manual=no
-MULTILIB_LIST="--with-multilib-list=armv6-m,armv7-m,armv7e-m,armv7-r"
+skip_steps=
+skip_gdb_with_python=no
+skip_mingw32_gdb_with_python=no
+build_type=
+build_tools=
+
+MULTILIB_LIST="--with-multilib-list=armv6-m,armv7-m,armv7e-m,armv7-r,armv8-m.base,armv8-m.main"
+
 for ac_arg; do
     case $ac_arg in
-        --skip_mingw32)
-            skip_mingw32=yes
-            ;;
-        --debug)
-            DEBUG_BUILD_OPTIONS=" -O0 -g "
-            ;;
-        --ppa)
-            is_ppa_release=yes
-            skip_mingw32=yes
-            ;;
-	--skip_manual)
-	    skip_manual=yes
-	    ;;
-        *)
-            usage
-            ;;
+      --skip_steps=*)
+	      skip_steps=`echo $ac_arg | sed -e "s/--skip_steps=//g" -e "s/,/ /g"`
+	      ;;
+      --build_type=*)
+	      build_type=`echo $ac_arg | sed -e "s/--build_type=//g" -e "s/,/ /g"`
+	      ;;
+      --build_tools=*)
+	      build_tools=`echo $ac_arg | sed -e "s/--build_tools=//g"`
+	      build_tools_abs_path=`cd $build_tools && pwd -P`
+	      if [ -d $build_tools_abs_path ]; then
+	        if [ -d $build_tools_abs_path/gcc ]; then
+	          export PATH=$build_tools_abs_path/gcc/bin:$PATH
+	        fi
+		if [ -d $build_tools_abs_path/mingw-w64-gcc ]; then
+		  export PATH=$build_tools_abs_path/mingw-w64-gcc/bin:$PATH
+		fi
+		if [ -d $build_tools_abs_path/installjammer ]; then
+		  export PATH=$build_tools_abs_path/installjammer:$PATH
+		fi
+		if [ -d $build_tools_abs_path/nsis ]; then
+		  export PATH=$build_tools_abs_path/nsis:$PATH
+		fi
+		if [ -d $build_tools_abs_path/python ]; then
+		  export PATH=$build_tools_abs_path/python/bin:$PATH
+		  export LD_LIBRARY_PATH="$build_tools_abs_path/python/lib"
+		  export PYTHONHOME="$build_tools_abs_path/python"
+		fi
+	      else
+	        echo "The specified folder of build tools don't exist: $build_tools" 1>&2
+		exit 1
+	      fi
+	      ;;
+      *)
+        usage
+        exit 1
+        ;;
     esac
 done
 
-if [ "x$BUILD" == "xx86_64-apple-darwin10" ]; then
+if [ "x$build_type" != "x" ]; then
+  for bt in $build_type; do
+    case $bt in
+      ppa)
+        is_ppa_release=yes
+        is_native_build=no
+        skip_gdb_with_python=yes
+        ;;
+      native)
+        is_native_build=yes
+        is_ppa_release=no
+        ;;
+      debug)
+        DEBUG_BUILD_OPTIONS=" -O0 -g "
+        ;;
+      *)
+        echo "Unknown build type: $bt" 1>&2
+        usage
+        exit 1
+        ;;
+    esac
+  done
+else
+  is_ppa_release=no
+  is_native_build=yes
+fi
+
+if [ "x$skip_steps" != "x" ]; then
+	for ss in $skip_steps; do
+		case $ss in
+		    manual)
+                      skip_manual=yes
+                      ;;
+		    gdb-with-python)
+                      skip_gdb_with_python=yes
+                      ;;
+	            mingw32)
+                      skip_mingw32=yes
+                      skip_mingw32_gdb_with_python=yes
+                      ;;
+                    mingw32-gdb-with-python)
+                      skip_mingw32_gdb_with_python=yes
+                      ;;
+                    *)
+                      echo "Unknown build steps: $ss" 1>&2
+                      usage
+                      exit 1
+                      ;;
+		esac
+	done
+fi
+
+if [ "x$BUILD" == "xx86_64-apple-darwin10" ] || [ "x$is_ppa_release" == "xyes" ]; then
     skip_mingw32=yes
+    skip_mingw32_gdb_with_python=yes
+fi
+
+#Building mingw gdb with python support requires python windows package and
+#a special config file. If any of them is missing, we skip the build of
+#mingw gdb with python support.
+if [ "x$build_tools" == "x" ] || [ ! -d $build_tools_abs_path/python-win ] \
+     || [ ! -f $build_tools_abs_path/python-config.sh ]; then
+  skip_mingw32_gdb_with_python=yes
 fi
 
 if [ "x$is_ppa_release" != "xyes" ]; then
@@ -83,6 +202,10 @@ if [ "x$is_ppa_release" != "xyes" ]; then
   ENV_CPPFLAGS=" -I$BUILDDIR_NATIVE/host-libs/zlib/include "
   ENV_LDFLAGS=" -L$BUILDDIR_NATIVE/host-libs/zlib/lib
                 -L$BUILDDIR_NATIVE/host-libs/usr/lib "
+
+  if [ "x$build_tools" != "x" ] && [ -d $build_tools_abs_path/python ]; then
+    ENV_LDFLAGS+=" -L$build_tools_abs_path/python/lib "
+  fi
 
   GCC_CONFIG_OPTS=" --build=$BUILD --host=$HOST_NATIVE
                     --with-gmp=$BUILDDIR_NATIVE/host-libs/usr
@@ -99,7 +222,6 @@ if [ "x$is_ppa_release" != "xyes" ]; then
   GDB_CONFIG_OPTS=" --build=$BUILD --host=$HOST_NATIVE
                     --with-libexpat-prefix=$BUILDDIR_NATIVE/host-libs/usr "
 fi
-
 
 mkdir -p $BUILDDIR_NATIVE
 rm -rf $INSTALLDIR_NATIVE && mkdir -p $INSTALLDIR_NATIVE
@@ -127,8 +249,11 @@ $SRCDIR/$BINUTILS/configure  \
     --htmldir=$INSTALLDIR_NATIVE_DOC/html \
     --pdfdir=$INSTALLDIR_NATIVE_DOC/pdf \
     --disable-nls \
+    --disable-werror \
+    --disable-sim \
+    --disable-gdb \
+    --enable-interwork \
     --enable-plugins \
-    --enable-werror=no \
     --with-sysroot=$INSTALLDIR_NATIVE/arm-none-eabi \
     "--with-pkgversion=$PKGVERSION"
 
@@ -194,7 +319,7 @@ popd
 pushd $INSTALLDIR_NATIVE
 rm -rf bin/arm-none-eabi-gccbug
 rm -rf ./lib/libiberty.a
-rmdir include
+rm -rf  include
 popd
 
 echo Task [III-2] /$HOST_NATIVE/newlib/
@@ -256,6 +381,7 @@ $SRCDIR/$NEWLIB_NANO/configure  \
     --disable-newlib-unbuf-stream-opt     \
     --enable-lite-exit                    \
     --enable-newlib-global-atexit         \
+    --enable-newlib-nano-formatted-io     \
     --disable-nls
 
 make -j$JOBS
@@ -326,25 +452,11 @@ for libiberty_lib in $LIBIBERTY_LIBRARIES ; do
     rm -rf $libiberty_lib
 done
 rm -rf ./lib/libiberty.a
-rmdir include
+rm -rf  include
 popd
 
 rm -f $INSTALLDIR_NATIVE/arm-none-eabi/usr
 popd
-
-echo Task [III-4.1] /$HOST_NATIVE/gcc-plugins
-#build and install GCC plugins
-if [ -d $SRCDIR/$GCC_PLUGINS/ ] && [ "x$build_gcc_plugin" == "xyes" ]; then
-plugin_dir=$($INSTALLDIR_NATIVE/bin/arm-none-eabi-gcc -print-file-name=plugin)
-# search for all directories not starting with .
-plugin_src_dirs=$(find $SRCDIR/$GCC_PLUGINS/ -mindepth 1 -maxdepth 1 -type d -name '[^\.]*')
-for d in $plugin_src_dirs; do
-    plugin_name=$(basename $d)
-    src_files=$(find $d -name \*.c -or -name \*.cc)
-    g++ -fPIC -fno-rtti -O2 -shared -I $BUILDDIR_NATIVE/host-libs/usr/include -I $plugin_dir/include $src_files \
-      -o $plugin_dir/$plugin_name.so
-done
-fi
 
 echo Task [III-5] /$HOST_NATIVE/gcc-size-libstdcxx/
 rm -f $BUILDDIR_NATIVE/target-libs/arm-none-eabi/usr
@@ -363,6 +475,7 @@ $SRCDIR/$GCC/configure --target=$TARGET \
     --disable-libquadmath \
     --disable-libssp \
     --disable-libstdcxx-pch \
+    --disable-libstdcxx-verbose \
     --disable-nls \
     --disable-shared \
     --disable-threads \
@@ -384,49 +497,79 @@ make install
 copy_multi_libs src_prefix="$BUILDDIR_NATIVE/target-libs/arm-none-eabi/lib" \
                 dst_prefix="$INSTALLDIR_NATIVE/arm-none-eabi/lib"           \
                 target_gcc="$BUILDDIR_NATIVE/target-libs/bin/arm-none-eabi-gcc"
+
+# Copy the nano configured newlib.h file into the location that nano.specs
+# expects it to be.
+mkdir -p $INSTALLDIR_NATIVE/arm-none-eabi/include/newlib-nano
+cp -f $BUILDDIR_NATIVE/target-libs/arm-none-eabi/include/newlib.h \
+		 $INSTALLDIR_NATIVE/arm-none-eabi/include/newlib-nano/newlib.h
+
 popd
 
 echo Task [III-6] /$HOST_NATIVE/gdb/
-rm -rf $BUILDDIR_NATIVE/gdb && mkdir -p $BUILDDIR_NATIVE/gdb
-pushd $BUILDDIR_NATIVE/gdb
-saveenv
-saveenvvar CFLAGS "$ENV_CFLAGS"
-saveenvvar CPPFLAGS "$ENV_CPPFLAGS"
-saveenvvar LDFLAGS "$ENV_LDFLAGS"
-$SRCDIR/$GDB/configure  \
-    --target=$TARGET \
-    --prefix=$INSTALLDIR_NATIVE \
-    --infodir=$INSTALLDIR_NATIVE_DOC/info \
-    --mandir=$INSTALLDIR_NATIVE_DOC/man \
-    --htmldir=$INSTALLDIR_NATIVE_DOC/html \
-    --pdfdir=$INSTALLDIR_NATIVE_DOC/pdf \
-    --disable-nls \
-    --disable-sim \
-    --with-libexpat \
-    --with-python=no \
-    --with-lzma=no \
-    --with-system-gdbinit=$INSTALLDIR_NATIVE/$HOST_NATIVE/arm-none-eabi/lib/gdbinit \
-    --enable-werror=no \
-    $GDB_CONFIG_OPTS \
-    '--with-gdb-datadir='\''${prefix}'\''/arm-none-eabi/share/gdb' \
-    "--with-pkgversion=$PKGVERSION"
+build_gdb()
+{
+	GDB_EXTRA_CONFIG_OPTS=$1
 
-if [ "x$DEBUG_BUILD_OPTIONS" != "x" ] ; then
-    make CFLAGS="-I$BUILDDIR_NATIVE/host-libs/zlib/include $DEBUG_BUILD_OPTIONS" -j$JOBS
+	rm -rf $BUILDDIR_NATIVE/gdb && mkdir -p $BUILDDIR_NATIVE/gdb
+	pushd $BUILDDIR_NATIVE/gdb
+	saveenv
+	saveenvvar CFLAGS "$ENV_CFLAGS"
+	saveenvvar CPPFLAGS "$ENV_CPPFLAGS"
+	saveenvvar LDFLAGS "$ENV_LDFLAGS"
+
+	$SRCDIR/$GDB/configure  \
+	    --target=$TARGET \
+	    --prefix=$INSTALLDIR_NATIVE \
+	    --infodir=$INSTALLDIR_NATIVE_DOC/info \
+	    --mandir=$INSTALLDIR_NATIVE_DOC/man \
+	    --htmldir=$INSTALLDIR_NATIVE_DOC/html \
+	    --pdfdir=$INSTALLDIR_NATIVE_DOC/pdf \
+	    --disable-nls \
+	    --disable-sim \
+	    --disable-gas \
+	    --disable-binutils \
+	    --disable-ld \
+	    --disable-gprof \
+	    --with-libexpat \
+	    --with-lzma=no \
+	    --with-system-gdbinit=$INSTALLDIR_NATIVE/$HOST_NATIVE/arm-none-eabi/lib/gdbinit \
+	    $GDB_CONFIG_OPTS \
+	    $GDB_EXTRA_CONFIG_OPTS \
+	    '--with-gdb-datadir='\''${prefix}'\''/arm-none-eabi/share/gdb' \
+	    "--with-pkgversion=$PKGVERSION"
+
+	if [ "x$DEBUG_BUILD_OPTIONS" != "x" ] ; then
+	    make CFLAGS="-I$BUILDDIR_NATIVE/host-libs/zlib/include $DEBUG_BUILD_OPTIONS" -j$JOBS
+	else
+	    make -j$JOBS
+	fi
+
+	make install
+
+	if [ "x$skip_manual" != "xyes" ]; then
+		make install-html install-pdf
+	fi
+
+	restoreenv
+	popd
+}
+
+
+#Always enable python support in GDB for PPA build.
+if [ "x$is_ppa_release" == "xyes" ]; then
+	build_gdb "--with-python=yes"
 else
-    make -j$JOBS
+        #First we build GDB without python support.
+	build_gdb "--with-python=no"
+
+	#Then build gdb with python support.
+	if [ "x$skip_gdb_with_python" == "xno" ]; then
+		build_gdb "--with-python=yes --program-prefix=$TARGET-  --program-suffix=-py"
+	fi
 fi
 
-make install
-
-if [ "x$skip_manual" != "xyes" ]; then
-	make install-html install-pdf
-fi
-
-restoreenv
-popd
-
-if [ "x$is_ppa_release" != "xyes" ]; then
+if [ "x$is_ppa_release" != "xyes" -a "x$skip_manual" != "xyes" ]; then
 echo TASK [III-7] /$HOST_NATIVE/build-manual
 rm -rf $BUILDDIR_NATIVE/build-manual && mkdir -p $BUILDDIR_NATIVE/build-manual
 pushd $BUILDDIR_NATIVE/build-manual
@@ -515,7 +658,7 @@ rm -f $INSTALL_PACKAGE_NAME
 popd
 
 # skip building mingw32 toolchain if "--skip_mingw32" specified
-# this huge if statement controls all $BUILDDIR_MINGW tasks till "task [3-1]"
+# this huge if statement controls all $BUILDDIR_MINGW tasks till "task [IV-8]"
 if [ "x$skip_mingw32" != "xyes" ] ; then
 saveenv
 saveenvvar CC_FOR_BUILD gcc
@@ -551,6 +694,8 @@ $SRCDIR/$BINUTILS/configure --build=$BUILD \
     --htmldir=$INSTALLDIR_MINGW_DOC/html \
     --pdfdir=$INSTALLDIR_MINGW_DOC/pdf \
     --disable-nls \
+    --disable-sim \
+    --disable-gdb \
     --enable-plugins \
     --with-sysroot=$INSTALLDIR_MINGW/arm-none-eabi \
     "--with-pkgversion=$PKGVERSION"
@@ -574,7 +719,6 @@ pushd $INSTALLDIR_MINGW
 rm -rf ./lib
 popd
 
-
 echo Task [IV-2] /$HOST_MINGW/copy_libs/
 if [ "x$skip_manual" != "xyes" ]; then
 copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/share/doc/gcc-arm-none-eabi/html $INSTALLDIR_MINGW_DOC/html
@@ -594,6 +738,7 @@ saveenvvar STRIP_FOR_TARGET $TARGET-strip
 saveenvvar CC_FOR_TARGET $TARGET-gcc
 saveenvvar GCC_FOR_TARGET $TARGET-gcc
 saveenvvar CXX_FOR_TARGET $TARGET-g++
+
 pushd $INSTALLDIR_MINGW/arm-none-eabi/
 rm -f usr
 ln -s . usr
@@ -651,53 +796,68 @@ popd
 
 pushd $INSTALLDIR_MINGW
 rm -rf bin/arm-none-eabi-gccbug
-rmdir include
+rm -rf  include
 popd
 
 copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/lib/gcc/arm-none-eabi $INSTALLDIR_MINGW/lib/gcc/arm-none-eabi
-#copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/arm-none-eabi/lib $INSTALLDIR_MINGW/arm-none-eabi/lib
-#copy_dir $BUILDDIR_MINGW/tools-$OBJ_SUFFIX_NATIVE/arm-none-eabi/include/c++ $INSTALLDIR_MINGW/arm-none-eabi/include/c++
 rm -rf $INSTALLDIR_MINGW/arm-none-eabi/usr
+rm -rf $INSTALLDIR_MINGW/lib/gcc/arm-none-eabi/*/plugin
+find $INSTALLDIR_MINGW -executable -and -not -type d -and -not -name \*.exe \
+  -and -not -name liblto_plugin-0.dll -exec rm -f \{\} \;
 restoreenv
 
 echo Task [IV-4] /$HOST_MINGW/gdb/
-rm -rf $BUILDDIR_MINGW/gdb && mkdir -p $BUILDDIR_MINGW/gdb
-pushd $BUILDDIR_MINGW/gdb
-saveenv
-saveenvvar CFLAGS "-I$BUILDDIR_MINGW/host-libs/zlib/include -O2"
-saveenvvar CPPFLAGS "-I$BUILDDIR_MINGW/host-libs/zlib/include"
-saveenvvar LDFLAGS "-L$BUILDDIR_MINGW/host-libs/zlib/lib"
-$SRCDIR/$GDB/configure --build=$BUILD \
-    --host=$HOST_MINGW \
-    --target=$TARGET \
-    --prefix=$INSTALLDIR_MINGW \
-    --infodir=$INSTALLDIR_MINGW_DOC/info \
-    --mandir=$INSTALLDIR_MINGW_DOC/man \
-    --htmldir=$INSTALLDIR_MINGW_DOC/html \
-    --pdfdir=$INSTALLDIR_MINGW_DOC/pdf \
-    --disable-nls \
-    --disable-sim \
-    --with-python=no \
-    --with-lzma=no \
-    --with-libexpat=$BUILDDIR_MINGW/host-libs/usr \
-    --with-libiconv-prefix=$BUILDDIR_MINGW/host-libs/usr \
-    --with-system-gdbinit=$INSTALLDIR_MINGW/$HOST_MINGW/arm-none-eabi/lib/gdbinit \
-    '--with-gdb-datadir='\''${prefix}'\''/arm-none-eabi/share/gdb' \
-    "--with-pkgversion=$PKGVERSION"
+build_mingw_gdb()
+{
+	MINGW_GDB_CONF_OPTS=$1
+	rm -rf $BUILDDIR_MINGW/gdb && mkdir -p $BUILDDIR_MINGW/gdb
+	pushd $BUILDDIR_MINGW/gdb
+	saveenv
+	saveenvvar CFLAGS "-I$BUILDDIR_MINGW/host-libs/zlib/include -O2"
+	saveenvvar CPPFLAGS "-I$BUILDDIR_MINGW/host-libs/zlib/include"
+	saveenvvar LDFLAGS "-L$BUILDDIR_MINGW/host-libs/zlib/lib"
+	$SRCDIR/$GDB/configure --build=$BUILD \
+	    --host=$HOST_MINGW \
+	    --target=$TARGET \
+	    --prefix=$INSTALLDIR_MINGW \
+	    --infodir=$INSTALLDIR_MINGW_DOC/info \
+	    --mandir=$INSTALLDIR_MINGW_DOC/man \
+	    --htmldir=$INSTALLDIR_MINGW_DOC/html \
+	    --pdfdir=$INSTALLDIR_MINGW_DOC/pdf \
+	    --disable-nls \
+	    --disable-sim \
+	    --disable-gas \
+	    --disable-binutils \
+	    --disable-ld \
+	    --disable-gprof \
+	    --with-lzma=no \
+	    $MINGW_GDB_CONF_OPTS \
+	    --with-libexpat=$BUILDDIR_MINGW/host-libs/usr \
+	    --with-libiconv-prefix=$BUILDDIR_MINGW/host-libs/usr \
+	    --with-system-gdbinit=$INSTALLDIR_MINGW/$HOST_MINGW/arm-none-eabi/lib/gdbinit \
+	    '--with-gdb-datadir='\''${prefix}'\''/arm-none-eabi/share/gdb' \
+	    "--with-pkgversion=$PKGVERSION"
 
-if [ "x$DEBUG_BUILD_OPTIONS" != "x" ] ; then
-    make CFLAGS="-I$BUILDDIR_MINGW/host-libs/zlib/include $DEBUG_BUILD_OPTIONS" -j$JOBS
-else
-    make -j$JOBS
+	if [ "x$DEBUG_BUILD_OPTIONS" != "x" ] ; then
+	    make CFLAGS="-I$BUILDDIR_MINGW/host-libs/zlib/include $DEBUG_BUILD_OPTIONS" -j$JOBS
+	else
+	    make -j$JOBS
+	fi
+
+	make install
+	if [ "x$skip_manual" != "xyes" ]; then
+		make install-html install-pdf
+	fi
+
+	restoreenv
+	popd
+}
+
+build_mingw_gdb "--with-python=no"
+
+if [ "x$skip_mingw32_gdb_with_python" == "xno" ]; then
+	build_mingw_gdb "--with-python=$build_tools_abs_path/python-config.sh --program-suffix=-py --program-prefix=$TARGET-"
 fi
-
-make install
-if [ "x$skip_manual" != "xyes" ]; then
-	make install-html install-pdf
-fi
-
-restoreenv
-popd
 
 echo Task [IV-5] /$HOST_MINGW/pretidy/
 pushd $INSTALLDIR_MINGW
@@ -739,7 +899,22 @@ flip -m -b $INSTALLDIR_MINGW_DOC/$LICENSE_FILE
 flip -m $INSTALLDIR_MINGW/share/gcc-arm-none-eabi/$SAMPLES_DOS_FILES
 rm -rf $INSTALLDIR_MINGW/include
 ln -s $INSTALLDIR_MINGW $INSTALL_PACKAGE_NAME
+
 $SRCDIR/$INSTALLATION/build_win_pkg.sh --package=$INSTALL_PACKAGE_NAME --release_ver=$RELEASEVER --date=$RELEASEDATE
+mv $SRCDIR/$INSTALLATION/build.log $SRCDIR/$INSTALLATION/build.installjammer.log
+mv $SRCDIR/$INSTALLATION/output/$PACKAGE_NAME_MINGW.exe $PACKAGEDIR/$PACKAGE_NAME_MINGW.installjammer.exe
+
+cp $SRCDIR/$INSTALLATION/gccvar.bat $INSTALLDIR_MINGW/bin
+mkdir -p $SRCDIR/$INSTALLATION/output
+makensis -DBaseDir=$INSTALLDIR_MINGW  \
+         -DAppName="$APPNAME" \
+         -DAppNameStr="$PKGVERSION"   \
+         -DPackageName=$PACKAGE_NAME_MINGW   \
+         -DInstallDirBase="$INSTALLBASE"   \
+         -DInstallDirVer="$GCC_VER_SHORT $RELEASEVER" \
+         "-XOutFile $SRCDIR/$INSTALLATION/output/$PACKAGE_NAME_MINGW.exe"    \
+         $SRCDIR/$INSTALLATION/arm-none-eabi-gnu-tools.nsi
+
 cp -rf $SRCDIR/$INSTALLATION/output/$PACKAGE_NAME_MINGW.exe $PACKAGEDIR/
 rm -f $INSTALL_PACKAGE_NAME
 popd
@@ -748,7 +923,7 @@ restoreenv
 echo Task [IV-8] /Package toolchain in zip format/
 pushd $INSTALLDIR_MINGW
 rm -f $PACKAGEDIR/$PACKAGE_NAME_MINGW.zip
-zip -r $PACKAGEDIR/$PACKAGE_NAME_MINGW.zip .
+zip -r9 $PACKAGEDIR/$PACKAGE_NAME_MINGW.zip .
 popd
 fi #end of if [ "x$skip_mingw32" != "xyes" ] ;
 
@@ -763,19 +938,14 @@ cp -f $SRCDIR/$LIBICONV_PACK $PACKAGE_NAME/src/
 cp -f $SRCDIR/$MPC_PACK $PACKAGE_NAME/src/
 cp -f $SRCDIR/$MPFR_PACK $PACKAGE_NAME/src/
 cp -f $SRCDIR/$ISL_PACK $PACKAGE_NAME/src/
-cp -f $SRCDIR/$ZLIB_PATCH $PACKAGE_NAME/src/
 cp -f $SRCDIR/$ZLIB_PACK $PACKAGE_NAME/src/
 pack_dir_clean $SRCDIR $BINUTILS $PACKAGE_NAME/src/$BINUTILS.tar.bz2
 pack_dir_clean $SRCDIR $GCC $PACKAGE_NAME/src/$GCC.tar.bz2
 pack_dir_clean $SRCDIR $GDB $PACKAGE_NAME/src/$GDB.tar.bz2 \
   --exclude="gdb/testsuite/config/qemu.exp" --exclude="sim"
 pack_dir_clean $SRCDIR $NEWLIB $PACKAGE_NAME/src/$NEWLIB.tar.bz2
-pack_dir_clean $SRCDIR $NEWLIB_NANO $PACKAGE_NAME/src/$NEWLIB_NANO.tar.bz2
 pack_dir_clean $SRCDIR $SAMPLES $PACKAGE_NAME/src/$SAMPLES.tar.bz2
 pack_dir_clean $SRCDIR $BUILD_MANUAL $PACKAGE_NAME/src/$BUILD_MANUAL.tar.bz2
-if [ -d $SRCDIR/$GCC_PLUGINS/ ]; then
-  pack_dir_clean $SRCDIR $GCC_PLUGINS $PACKAGE_NAME/src/$GCC_PLUGINS.tar.bz2
-fi
 if [ "x$skip_mingw32" != "xyes" ] ; then
     pack_dir_clean $SRCDIR $INSTALLATION \
       $PACKAGE_NAME/src/$INSTALLATION.tar.bz2 \
@@ -798,6 +968,7 @@ rm -rf md5.txt
 $MD5 $PACKAGE_NAME_NATIVE.tar.bz2     >>md5.txt
 if [ "x$skip_mingw32" != "xyes" ] ; then
     $MD5 $PACKAGE_NAME_MINGW.exe         >>md5.txt
+    $MD5 $PACKAGE_NAME_MINGW.installjammer.exe >>md5.txt
     $MD5 $PACKAGE_NAME_MINGW.zip         >>md5.txt
 fi
 $MD5 $PACKAGE_NAME-src.tar.bz2 >>md5.txt

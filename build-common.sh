@@ -1,4 +1,4 @@
-# Copyright (c) 2011-2013, ARM Limited
+# Copyright (c) 2011-2015, ARM Limited
 # All rights reserved.
 # 
 # Redistribution and use in source and binary forms, with or without
@@ -229,11 +229,11 @@ copy_multi_libs() {
         multi_dir="${multilib%%;*}"
         src_dir=${src_prefix}/${multi_dir}
         dst_dir=${dst_prefix}/${multi_dir}
-        cp -f "${src_dir}/libstdc++.a" "${dst_dir}/libstdc++_s.a"
-        cp -f "${src_dir}/libsupc++.a" "${dst_dir}/libsupc++_s.a"
-        cp -f "${src_dir}/libc.a" "${dst_dir}/libc_s.a"
-        cp -f "${src_dir}/libg.a" "${dst_dir}/libg_s.a"
-        cp -f "${src_dir}/librdimon.a" "${dst_dir}/librdimon_s.a"
+        cp -f "${src_dir}/libstdc++.a" "${dst_dir}/libstdc++_nano.a"
+        cp -f "${src_dir}/libsupc++.a" "${dst_dir}/libsupc++_nano.a"
+        cp -f "${src_dir}/libc.a" "${dst_dir}/libc_nano.a"
+        cp -f "${src_dir}/libg.a" "${dst_dir}/libg_nano.a"
+        cp -f "${src_dir}/librdimon.a" "${dst_dir}/librdimon_nano.a"
         cp -f "${src_dir}/nano.specs" "${dst_dir}/"
         cp -f "${src_dir}/rdimon.specs" "${dst_dir}/"
         cp -f "${src_dir}/nosys.specs" "${dst_dir}/"
@@ -257,21 +257,21 @@ INSTALLDIR_MINGW_DOC=$ROOT/install-mingw/share/doc/gcc-arm-none-eabi
 PACKAGEDIR=$ROOT/pkg
 
 BINUTILS=binutils
-CLOOG=cloog-0.18.0
+CLOOG=cloog-0.18.1
 EXPAT=expat-2.0.1
 GCC=gcc
 GCC_PLUGINS=gcc-plugins
 GDB=gdb
 GMP=gmp-4.3.2
-NEWLIB_NANO=newlib-nano-2.1
+NEWLIB_NANO=newlib
 SAMPLES=samples
 LIBELF=libelf-0.8.13
 LIBICONV=libiconv-1.14
 MPC=mpc-0.8.1
 MPFR=mpfr-2.4.2
 NEWLIB=newlib
-ISL=isl-0.11.1
-ZLIB=zlib-1.2.5
+ISL=isl-0.12.2
+ZLIB=zlib-1.2.8
 INSTALLATION=installation
 SAMPLES=samples
 BUILD_MANUAL=build-manual
@@ -284,9 +284,7 @@ LIBICONV_PACK=$LIBICONV.tar.gz
 MPC_PACK=$MPC.tar.gz
 MPFR_PACK=$MPFR.tar.bz2
 ISL_PACK=$ISL.tar.bz2
-ZLIB_PACK=$ZLIB.tar.bz2
-
-ZLIB_PATCH=$ZLIB.patch
+ZLIB_PACK=$ZLIB.tar.gz
 
 RELEASEDATE=`date +%Y%m%d`
 release_year=${RELEASEDATE:0:4}
@@ -313,6 +311,13 @@ SAMPLES_DOS_FILES=$SAMPLES/readme.txt
 BUILD_MANUAL_FILE=How-to-build-toolchain.pdf
 GCC_VER=`cat $SRCDIR/$GCC/gcc/BASE-VER`
 GCC_VER_NAME=`echo $GCC_VER | cut -d'.' -f1,2 | sed -e 's/\./_/g'`
+if [[ $(uname -s) == "Darwin" ]]
+then
+    SEDOPTION='-E'
+else
+    SEDOPTION='-r'
+fi
+GCC_VER_SHORT=`echo $GCC_VER_NAME | sed $SEDOPTION 's/_/\./g'`
 HOST_MINGW=i686-w64-mingw32
 HOST_MINGW_TOOL=i686-w64-mingw32
 TARGET=arm-none-eabi
@@ -364,4 +369,6 @@ PACKAGE_NAME=gcc-$TARGET-$GCC_VER_NAME-$RELEASEVER-$RELEASEDATE
 PACKAGE_NAME_NATIVE=$PACKAGE_NAME-$PACKAGE_NAME_SUFFIX
 PACKAGE_NAME_MINGW=$PACKAGE_NAME-win32
 INSTALL_PACKAGE_NAME=gcc-$TARGET-$GCC_VER_NAME-$RELEASEVER
+INSTALLBASE="GNU Tools ARM Embedded"
+APPNAME="$PKGVERSION $GCC_VER_SHORT $release_year"
 
